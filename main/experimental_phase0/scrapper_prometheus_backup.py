@@ -69,7 +69,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 NORMAL_OUTPUT = os.path.join(DATA_DIR, "train_normal_th3.csv")
 ANOMALY_OUTPUT = os.path.join(DATA_DIR, "test_anomaly_th3.csv")
-INPUT_FILE = os.path.join(BASE_DIR, "dataScrapper", "promCadvisor.txt")
+#INPUT_FILE = os.path.join(BASE_DIR, "dataScrapper", "promCadvisor.txt")
+#CHANGING INPUT_FILE TO THIS:
+INPUT_FILE = os.path.join(BASE_DIR, "dataScrapper", "allPromQuery.txt")
 PROMETHEUS_URL = "http://localhost:9090"
 influxDB_Token = os.environ.get("INFLUXDB_TOKEN")
 if not influxDB_Token:
@@ -502,7 +504,9 @@ async def pre_flight_check(init_df: pd.DataFrame, client, raw_queries: List[str]
     # 2. Check CPU and NET_TX for all CU/DU containers
     for cname in PREFLIGHT_CONTAINERS:
         cpu_min = CU_CPU_MIN if cname.startswith("srscu") else DU_CPU_MIN
-        cpu_idx = next((i for i, q in enumerate(raw_queries) if f'name="{cname}"' in q and 'cpu_user' in q), None)
+        #cpu_idx = next((i for i, q in enumerate(raw_queries) if f'name="{cname}"' in q and 'cpu_user' in q), None)
+        #CHANGING TO THIS:
+        cpu_idx = next((i for i, q in enumerate(raw_queries) if cname in q and 'cpu_user' in q), None)
         if cpu_idx is not None:
             val = await client.fetch_query(actual_queries[cpu_idx])
             ok = val >= cpu_min
@@ -511,7 +515,9 @@ async def pre_flight_check(init_df: pd.DataFrame, client, raw_queries: List[str]
                 pass
                 # passed = False Change this to # passed = False or passed = True -- changes - 2
 
-        tx_idx = next((i for i, q in enumerate(raw_queries) if f'name="{cname}"' in q and 'transmit' in q), None)
+        #tx_idx = next((i for i, q in enumerate(raw_queries) if f'name="{cname}"' in q and 'transmit' in q), None)
+        #CHANGING TO THIS:
+        tx_idx = next((i for i, q in enumerate(raw_queries) if cname in q and 'transmit' in q), None)
         if tx_idx is not None:
             val = await client.fetch_query(actual_queries[tx_idx])
             ok = val >= NET_TX_MIN
