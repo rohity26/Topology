@@ -285,8 +285,11 @@ for c in srscu0 srscu1 srscu2 srsdu0 srsdu1 srsdu2 srsdu3 srsdu4 srsdu5; do
     fi
 done
 
-# ─── Step 6.5: Dynamic Runtime Binary Injection (NATIVE FLATTENED HOTFIX) ──
-log "=== Step 6.5: Injecting Flattened Standalone tc and pkill ==="
+
+#===================================================================================================
+
+# ─── Step 6.5: Dynamic Runtime Binary Injection & Stress Dependencies ──
+log "=== Step 6.5: Injecting Flattened Standalone tc, pkill, and stress-ng ==="
 
 HOST_TC=$(which tc || echo "/usr/sbin/tc")
 HOST_PKILL=$(which pkill || echo "/usr/bin/pkill")
@@ -294,14 +297,17 @@ HOST_PKILL=$(which pkill || echo "/usr/bin/pkill")
 REAL_TC=$(readlink -f "$HOST_TC")
 REAL_PKILL=$(readlink -f "$HOST_PKILL")
 
+# Define where your downloaded packages live on the host machine
+PKG_DIR="${BASE_DIR}/experimental_phase0/offline_packages"
+
 for container in srscu0 srscu1 srscu2 srsdu0 srsdu1 srsdu2 srsdu3 srsdu4 srsdu5; do
     if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
-        info "Injecting raw binaries into $container..."
+        info "Processing runtime components for $container..."
         
-        # 1. Force remove old layouts
+        # A. Force remove old network tools layout
         docker exec -u 0 "$container" rm -f /usr/sbin/tc /usr/bin/tc /bin/tc /usr/bin/pkill /bin/pkill 2>/dev/null || true
         
-        # 2. Inject flat binaries directly into secondary standard execution targets
+        # B. Inject flat binaries directly into execution environments
         docker cp "$REAL_TC" "${container}:/usr/sbin/tc"
         docker cp "$REAL_TC" "${container}:/usr/bin/tc"
         docker cp "$REAL_TC" "${container}:/bin/tc"
@@ -309,12 +315,43 @@ for container in srscu0 srscu1 srscu2 srsdu0 srsdu1 srsdu2 srsdu3 srsdu4 srsdu5;
         docker cp "$REAL_PKILL" "${container}:/usr/bin/pkill"
         docker cp "$REAL_PKILL" "${container}:/bin/pkill"
         
-        # 3. Apply execute permissions globally across destinations
+        # C. Apply execute permissions to network tool paths
         docker exec -u 0 "$container" chmod +x /usr/sbin/tc /usr/bin/tc /bin/tc /usr/bin/pkill /bin/pkill
+
+        # D. AUTOMATED STRESS-NG ENGINE:
+        # Check if stress-ng is functional inside this container node
+        if ! docker exec "$container" which stress-ng >/dev/null 2>&1; then
+            if [ -d "$PKG_DIR" ]; then
+                info "  -> stress-ng missing. Unpacking offline assets into $container..."
+                
+                # 1. Establish container workspace temporary mirror
+                docker exec -u 0 "$container" mkdir -p /tmp/pkgs
+                
+                # 2. Push host debs inside the target architecture
+                docker cp "${PKG_DIR}/." "${container}:/tmp/pkgs/"
+                
+                # 3. Trigger recursive un-tar extraction and dependency configuration
+                docker exec -u 0 "$container" dpkg -iR /tmp/pkgs/ >/dev/null 2>&1
+                
+                # 4. Safely wipe out local installation workspace files
+                docker exec -u 0 "$container" rm -rf /tmp/pkgs
+                
+                # Verification Check
+                if docker exec "$container" which stress-ng >/dev/null 2>&1; then
+                    log "  -> stress-ng successfully provisioned inside $container!"
+                else
+                    err "  -> stress-ng provisioning failed for $container."
+                fi
+            else
+                warn "  -> Cannot find local repository directory at $PKG_DIR. Skipping package extraction."
+            fi
+        else
+            log "  -> stress-ng is already verified active inside $container [OK]"
+        fi
     fi
 done
 
-log "All native system tools successfully injected across structural paths!"
+log "All runtime binaries and core dependencies successfully mapped across cellular containers!"
 #===================================================================================================
 
 echo ""

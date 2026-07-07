@@ -106,6 +106,62 @@ logging.basicConfig(
 )
 
 # =====================================================================
+# Added NEW function for Installation of stress-ng package in the containers....
+# =====================================================================
+
+def auto_install_offline_dependencies():
+    """
+    Automated Offline Installer Engine:
+    Scans all running targets, checks if stress-ng is installed,
+    and deploys the host debs recursively via docker cp if missing.
+    """
+    logging.info("=== AUTOMATED OFFLINE PACKAGE VERIFICATION ===")
+    
+    # Path to your host packages directory relative to this script
+    host_pkg_dir = os.path.join(EXP_DIR, "offline_packages")
+    
+    if not os.path.exists(host_pkg_dir):
+        logging.error(f"[AUTO-INSTALL] Host package directory not found at {host_pkg_dir}!")
+        logging.error("Please ensure the 'offline_packages' directory exists with the required .deb files.")
+        return False
+
+    for container in TARGET_CONTAINERS:
+        try:
+            # Check if stress-ng is already installed in this container
+            check_cmd = f"docker exec {container} which stress-ng"
+            result = subprocess.run(check_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            if result.returncode == 0:
+                logging.info(f"  {container:8s} -> stress-ng already active [OK]")
+                continue
+                
+            logging.warning(f"  {container:8s} -> stress-ng MISSING. Deploying offline assets...")
+            
+            # 1. Create directory inside container
+            subprocess.run(f"docker exec -u 0 {container} mkdir -p /tmp/pkgs", shell=True, check=True)
+            
+            # 2. Copy the entire host offline_packages contents inside
+            subprocess.run(f"docker cp {host_pkg_dir}/. {container}:/tmp/pkgs/", shell=True, check=True)
+            
+            # 3. Trigger recursive dpkg offline installation
+            install_res = subprocess.run(f"docker exec -u 0 {container} dpkg -iR /tmp/pkgs/", shell=True, capture_output=True, text=True)
+            
+            # 4. Clean up the installer workspace safely
+            subprocess.run(f"docker exec -u 0 {container} rm -rf /tmp/pkgs", shell=True, check=True)
+            
+            # Final Check
+            if "Setting up stress-ng" in install_res.stdout or "Setting up stress-ng" in install_res.stderr or subprocess.run(f"docker exec {container} which stress-ng", shell=True).returncode == 0:
+                logging.info(f"  {container:8s} -> Offline installation SUCCESSFUL!")
+            else:
+                logging.error(f"  {container:8s} -> Offline installation completed but validation failed.")
+                
+        except Exception as e:
+            logging.error(f"  {container:8s} -> Critical failure during auto-install sequence: {e}")
+            
+    logging.info("=== END OFFLINE PACKAGE VERIFICATION ===")
+    
+    
+# =====================================================================
 # 2. CORE UTILITIES (Docker & Cleanup)
 # =====================================================================
 def nuclear_cleanup():
@@ -586,6 +642,19 @@ def check_baseline_drift(snapshot: dict, row: dict):
 # =====================================================================
 async def main():
     global current_phase
+
+    # --- INSERT AUTO-INSTALL HERE ---
+    # Ensure all containers are loaded with stress-ng before checking metrics
+    auto_install_offline_dependencies()
+    # --------------------------------
+    
+    # --- ADD THIS TO CLEAN OLD BLANK FILES AND FORCE HEADERS ---
+    # This truncates the files, ensuring os.path.exists checks trigger headers cleanly!
+    #for f_path in [NORMAL_OUTPUT, ANOMALY_OUTPUT]:
+    #    if os.path.exists(f_path):
+    #        logging.info(f"Clearing old file space to force clean header writes on: {f_path}")
+    #        open(f_path, 'w').close() 
+    # ------------------------------------------------------------
 
     # A. Prometheus Discovery
     with open(INPUT_FILE, "r") as f:
